@@ -1,0 +1,362 @@
+import type { FormEvent } from "react";
+
+import { Icon } from "@iconify/react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useDispatch } from "react-redux";
+import { useTranslation } from "react-i18next";
+
+import AppleLoginBtn from "@/components/Functional/AppleLoginBtn";
+import GoogleLoginBtn from "@/components/Functional/GoogleLoginBtn";
+import {
+  Button,
+  Divider,
+  Input,
+  InputOtp,
+  Link,
+  Tab,
+  Tabs,
+  toastError,
+} from "@/components/ui";
+import { handleLoginUser } from "@/helpers/auth";
+import { looksLikeEmail } from "@/helpers/validator";
+import { resolveSocialLoginProviders } from "@/features/auth/socialLogin";
+import { useOtpLogin } from "@/features/auth/useOtpLogin";
+import { usePublicSettings } from "@/features/auth/usePublicSettings";
+import { getSpecificSettings } from "@/helpers/getters";
+import type {
+  AuthenticationSettings,
+  SystemSettings,
+} from "@/types/ApiResponse";
+
+const PhoneInput = dynamic(() => import("@/components/Functional/PhoneInput"), {
+  ssr: false,
+});
+
+const authInputClassNames = {
+  label: "text-sm font-semibold text-foreground",
+  input: "text-sm",
+  inputWrapper: "h-12 min-h-12 bg-content1",
+};
+
+export interface LoginFormProps {
+  /** Called once the session is established. */
+  onSuccess: () => void;
+  /** Switch the host sheet over to the register form. */
+  onSwitchToRegister: () => void;
+  /** Switch the host sheet over to the password-reset form. */
+  onForgotPassword: () => void;
+  /** Rendered in a sheet rather than a page — used to tighten spacing. */
+  compact?: boolean;
+}
+
+/**
+ * The single login implementation, rendered inside LoginSheet.
+ */
+const LoginForm = ({
+  onSuccess,
+  onSwitchToRegister,
+  onForgotPassword,
+  compact = false,
+}: LoginFormProps) => {
+  const dispatch = useDispatch();
+  const { t } = useTranslation();
+  // AuthSheetHost is mounted in _app OUTSIDE the layout's SettingsProvider, so
+  // useSettings() would return defaults here. Read the shared "/settings" SWR
+  // cache (populated by the layout) to know whether demo mode is on.
+  const { data: settings } = usePublicSettings();
+  const demoMode = Boolean(
+    (getSpecificSettings(settings, "system") as SystemSettings | undefined)
+      ?.demoMode,
+  );
+  const authSettings = settings
+    ? (getSpecificSettings(
+        settings,
+        "authentication",
+      ) as AuthenticationSettings)
+    : null;
+  const socialLogin = resolveSocialLoginProviders(authSettings);
+  const hasSocialLogin = socialLogin.google || socialLogin.apple;
+
+  // Demo mode ships with a shared test account — prefill it so reviewers can
+  // sign in without knowing the credentials.
+  const [identifier, setIdentifier] = useState(demoMode ? "9000000000" : "");
+  const [password, setPassword] = useState(demoMode ? "12345678" : "");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<{
+    identifier?: string;
+    password?: string;
+  }>({});
+
+  const otp = useOtpLogin({ authSettings, onSuccess });
+
+  // Prefill the shared demo account once demo mode is known (settings may load
+  // after this form mounts, so lazy state init alone can miss it).
+  const demoPrefilledRef = useRef(false);
+  useEffect(() => {
+    if (!demoMode || demoPrefilledRef.current) return;
+    demoPrefilledRef.current = true;
+    setIdentifier((v) => v || "9000000000");
+    setPassword((v) => v || "12345678");
+  }, [demoMode]);
+
+  const onPasswordSubmit = useCallback(
+    async (event: FormEvent) => {
+      event.preventDefault();
+
+      const found: typeof errors = {};
+      if (!identifier.trim())
+        found.identifier = t("auth.errors.identifier_required");
+      if (!password) found.password = t("auth.errors.password_required");
+      setErrors(found);
+      if (Object.keys(found).length) return;
+
+      setIsLoading(true);
+      try {
+        const isEmail = looksLikeEmail(identifier);
+        // Returns the ApiResponse, not a boolean, and toasts both outcomes.
+        const response = await handleLoginUser(
+          {
+            email: isEmail ? identifier.trim() : undefined,
+            mobile: isEmail ? undefined : identifier.replace(/\D/g, ""),
+            password,
+          },
+          dispatch,
+        );
+
+        if (response?.success && response.data) onSuccess();
+      } catch {
+        toastError(t("login_modal.login_failed_toast"));
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [identifier, password, dispatch, onSuccess, t],
+  );
+
+  const onOtpSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const code = String(
+      Object.fromEntries(new FormData(event.currentTarget)).otp ?? "",
+    );
+    otp.verify(code);
+  };
+
+  return (
+    <div className="flex flex-col">
+      <Tabs
+        aria-label={t("auth.sign_in_method")}
+        classNames={{
+          base: compact ? "mb-4" : "mb-5",
+          tabList:
+            "w-full gap-1 rounded-small border border-divider bg-content2 p-1",
+          cursor: "rounded-small bg-content1 shadow-sm",
+          tab: "h-10 text-sm font-semibold",
+          tabContent:
+            "text-default-500 group-data-[selected=true]:text-foreground",
+          panel: "px-0 pt-5",
+        }}
+        variant="light"
+      >
+        <Tab key="password" title={t("login_modal.password_label")}>
+          <form
+            className="flex flex-col gap-4"
+            noValidate
+            onSubmit={onPasswordSubmit}
+          >
+            <Input
+              autoComplete="username"
+              classNames={authInputClassNames}
+              errorMessage={errors.identifier}
+              isInvalid={Boolean(errors.identifier)}
+              label={t("login_modal.email_label")}
+              placeholder={t("login_modal.email_placeholder")}
+              startContent={
+                <Icon
+                  aria-hidden="true"
+                  className="text-lg"
+                  icon="solar:letter-linear"
+                />
+              }
+              value={identifier}
+              onValueChange={(v) => {
+                setIdentifier(v);
+                setErrors((p) => ({ ...p, identifier: undefined }));
+              }}
+            />
+
+            <Input
+              autoComplete="current-password"
+              classNames={authInputClassNames}
+              errorMessage={errors.password}
+              isInvalid={Boolean(errors.password)}
+              label={t("login_modal.password_label")}
+              placeholder={t("login_modal.password_placeholder")}
+              type={showPassword ? "text" : "password"}
+              value={password}
+              endContent={
+                <button
+                  aria-label={t(
+                    showPassword ? "auth.hide_password" : "auth.show_password",
+                  )}
+                  className="text-default-400 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  type="button"
+                  onClick={() => setShowPassword((s) => !s)}
+                >
+                  <Icon
+                    className="text-lg"
+                    icon={
+                      showPassword
+                        ? "solar:eye-closed-linear"
+                        : "solar:eye-linear"
+                    }
+                  />
+                </button>
+              }
+              onValueChange={(v) => {
+                setPassword(v);
+                setErrors((p) => ({ ...p, password: undefined }));
+              }}
+            />
+
+            <div className="flex justify-end">
+              <Link
+                className="cursor-pointer text-sm font-semibold text-primary"
+                onPress={onForgotPassword}
+              >
+                {t("login_modal.forgot_password")}
+              </Link>
+            </div>
+
+            <Button
+              className="h-12 min-h-12 w-full font-bold"
+              color="primary"
+              isLoading={isLoading}
+              type="submit"
+            >
+              {t("login_modal.sign_in")}
+            </Button>
+          </form>
+        </Tab>
+
+        <Tab key="otp" title={t("auth.otp_tab")}>
+          {otp.step === "phone" ? (
+            <div className="flex flex-col gap-4">
+              <PhoneInput
+                label={t("auth.phone_number")}
+                labelPlacement="outside"
+                variant="faded"
+                onPhoneChange={(_iso2, phoneNumber, dialCode) =>
+                  otp.setPhone(
+                    `${dialCode.startsWith("+") ? dialCode : `+${dialCode}`}${phoneNumber}`,
+                  )
+                }
+              />
+              <Button
+                className="h-12 min-h-12 w-full font-bold"
+                color="primary"
+                isLoading={otp.isSending}
+                onPress={otp.send}
+              >
+                {t("auth.send_code")}
+              </Button>
+            </div>
+          ) : (
+            <form className="flex flex-col gap-4" onSubmit={onOtpSubmit}>
+              <p className="text-small text-default-500">
+                {t("auth.otp_verify_subtitle", { phone: otp.phone })}
+              </p>
+
+              <div className="flex justify-center">
+                <InputOtp
+                  autoFocus
+                  aria-label={t("auth.otp_input_label")}
+                  length={6}
+                  name="otp"
+                />
+              </div>
+
+              <Button
+                className="h-12 min-h-12 w-full font-bold"
+                color="primary"
+                isLoading={otp.isVerifying}
+                type="submit"
+              >
+                {t("auth.verify_and_continue")}
+              </Button>
+
+              <div className="flex items-center justify-between">
+                <Button
+                  className="h-auto min-w-0 px-2 py-1"
+                  size="sm"
+                  variant="light"
+                  onPress={otp.reset}
+                >
+                  {t("auth.change_number")}
+                </Button>
+                <Button
+                  className="h-auto min-w-0 px-2 py-1"
+                  isDisabled={otp.resendIn > 0}
+                  isLoading={otp.isResending}
+                  size="sm"
+                  variant="light"
+                  onPress={otp.resend}
+                >
+                  {otp.resendIn > 0
+                    ? t("auth.resend_in", { seconds: otp.resendIn })
+                    : t("auth.resend_code")}
+                </Button>
+              </div>
+            </form>
+          )}
+        </Tab>
+      </Tabs>
+
+      {hasSocialLogin && (
+        <>
+          <div className={`flex items-center gap-4 ${compact ? "my-5" : "my-6"}`}>
+            <Divider className="flex-1" />
+            <span className="text-tiny font-semibold uppercase tracking-widest text-default-400">
+              {t("login_modal.or")}
+            </span>
+            <Divider className="flex-1" />
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {socialLogin.google && (
+              <GoogleLoginBtn
+                context="login"
+                isLoading={isLoading}
+                setIsLoading={setIsLoading}
+                onOpenChange={onSuccess}
+              />
+            )}
+            {socialLogin.apple && (
+              <AppleLoginBtn
+                context="login"
+                isLoading={isLoading}
+                setIsLoading={setIsLoading}
+                onOpenChange={onSuccess}
+              />
+            )}
+          </div>
+        </>
+      )}
+
+      <p
+        className={`text-center text-sm text-default-500 ${compact ? "mt-5" : "mt-6"}`}
+      >
+        {t("login_modal.no_account")}{" "}
+        <Link
+          className="cursor-pointer text-sm font-bold text-primary"
+          onPress={onSwitchToRegister}
+        >
+          {t("login_modal.create_account")}
+        </Link>
+      </p>
+    </div>
+  );
+};
+
+export default LoginForm;

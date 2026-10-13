@@ -1,0 +1,113 @@
+export const fallbackPaginateRes = {
+  success: false,
+  message: "An error occurred.",
+  data: {
+    current_page: 0,
+    data: [],
+    per_page: 0,
+    total: 0,
+  },
+};
+export const fallbackPaginateResOfProductReviews = {
+  success: false,
+  message: "An error occurred.",
+  data: {
+    current_page: 0,
+    data: {
+      total_reviews: 0,
+      average_rating: "0",
+      ratings_breakdown: {
+        "1_star": "0",
+        "2_star": "0",
+        "3_star": "0",
+        "4_star": "0",
+        "5_star": "0",
+      },
+      reviews: [],
+    },
+    per_page: 0,
+    total: 0,
+  },
+};
+
+export const fallbackApiRes = {
+  success: false,
+  message: "An error occurred.",
+  data: undefined,
+};
+
+// Keyed by the customer-facing status code (settings `orderStatusEnum` /
+// CustomerStatus.code): processing, shipped, delivered, on_hold,
+// return_requested, returned, refunded, cancelled.
+export const orderStatusColorMap = (
+  status: string | undefined
+): "default" | "primary" | "secondary" | "success" | "warning" | "danger" => {
+  switch (status) {
+    case "processing":
+      return "primary";
+    case "shipped":
+      return "secondary";
+    case "delivered":
+      return "success";
+    case "on_hold":
+      return "warning";
+    case "return_requested":
+      return "warning";
+    case "returned":
+      return "secondary";
+    case "refunded":
+      return "success";
+    case "cancelled":
+      return "danger";
+    default:
+      return "default";
+  }
+};
+export const orderStatusPriority: Record<string, number> = {
+  pending: 1,
+  awaiting_store_response: 2,
+  partially_accepted: 3,
+  accepted: 3,
+  rejected_by_seller: 3.5,
+  preparing: 4,
+  ready_for_pickup: 5,
+  assigned: 6,
+  out_for_delivery: 7,
+  delivered: 8,
+  cancelled: 9,
+  returned: 10,
+};
+
+export const staticProfileImage =
+  "https://i.pravatar.cc/150?u=a042581f4e29026704d";
+
+export const TILE_LAYERS = [
+  "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",
+  "https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}",
+  "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+  "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+  "https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}.png",
+  "https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}.png",
+  "https://tiles.stadiamaps.com/tiles/terrain/{z}/{x}/{y}.png",
+];
+
+export const staticLat = 23.242;
+export const staticLng = 69.6669;
+
+export const demoEmail = "user@gmail.com";
+export const demoNumber = "9000000000";
+
+/**
+ * Ceiling for a single wallet top-up, in the active market currency. The panel
+ * exposes no per-market wallet limit yet, so this is a documented default —
+ * replace it with the setting once the API carries one.
+ */
+export const WALLET_MAX_RECHARGE = 1000000;
+
+/**
+ * Floor for a single wallet top-up, in the active market currency. Mirrors the
+ * panel's own `min:1` on the recharge request.
+ */
+export const WALLET_MIN_RECHARGE = 1;

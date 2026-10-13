@@ -1,0 +1,25 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 128 128"
+  role="img"
+  aria-labelledby="title"
+>
+  <title id="title">Quick-store</title>
+  <rect width="128" height="128" rx="30" fill="#fbbf24" />
+  <path d="M36 52h56l-5 51H41l-5-51Z" fill="#171717" />
+  <path
+    d="M48 55V42a16 16 0 0 1 32 0v13"
+    fill="none"
+    stroke="#171717"
+    stroke-linecap="round"
+    stroke-width="8"
+  />
+  <path
+    d="m50 76 9 9 20-21"
+    fill="none"
+    stroke="#fff"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="7"
+  />
+</svg>

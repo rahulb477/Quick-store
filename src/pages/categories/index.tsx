@@ -1,0 +1,219 @@
+import { GetServerSideProps } from "next";
+import { getCategories, getSettings } from "@/routes/api";
+import React from "react";
+import { isSSR } from "@/helpers/getters";
+import { getMarketFromContext } from "@/helpers/functionalHelpers";
+import MyBreadcrumbs from "@/components/custom/MyBreadcrumbs";
+import PageHeader from "@/components/custom/PageHeader";
+import CategoryCard from "@/components/Cards/CategoryCard";
+import CategoryCardSkeleton from "@/components/Skeletons/CategoryCardSkeleton";
+import InfiniteScroll from "@/components/Functional/InfiniteScroll";
+import InfiniteScrollStatus from "@/components/Functional/InfiniteScrollStatus";
+import { STALE_TIME, useInfiniteData } from "@/hooks/useInfiniteData";
+import { Category, PaginatedResponse } from "@/types/ApiResponse";
+import { NextPageWithLayout } from "@/types";
+import { ArrowRight, FolderOpen } from "lucide-react";
+import NoProductsFound from "@/components/NoProductsFound";
+import { ErrorState } from "@/components/ui";
+import { loadTranslations } from "../../../i18n";
+import { useTranslation } from "react-i18next";
+import DynamicSEO from "@/SEO/DynamicSEO";
+import {
+  generateCollectionSchema,
+  generateBreadcrumbSchema,
+} from "@/helpers/seo";
+import { Button } from "@heroui/react";
+import { useRouter } from "next/router";
+import { useSettings } from "@/contexts/SettingsContext";
+
+interface CategoriesPageProps {
+  initialCategories: PaginatedResponse<Category[]> | null;
+  error?: string;
+}
+
+const PER_PAGE = 24;
+
+const CategoriesPage: NextPageWithLayout<CategoriesPageProps> = ({
+  initialCategories,
+}) => {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const { webSettings } = useSettings();
+
+  const {
+    data: categories,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    total,
+    loadMore,
+    refetch,
+    error: fetchError,
+  } = useInfiniteData<Category>({
+    fetcher: getCategories,
+    perPage: PER_PAGE,
+    initialData: initialCategories?.data?.data || [],
+    initialTotal: initialCategories?.data?.total || 0,
+    dataKey: "categories-page",
+    staleTime: STALE_TIME.reference,
+    extraParams: {
+      slug: router.query.slug as string,
+    },
+  });
+
+  // Generate SEO schemas
+  const collectionSchema = generateCollectionSchema(
+    t("pageTitle.categories"),
+    t("pages.categories.subtitle"),
+    "/categories",
+    webSettings?.customerWebUrl,
+  );
+
+  const breadcrumbSchema = generateBreadcrumbSchema(
+    [
+      { name: "Home", url: "/" },
+      { name: t("pageTitle.categories"), url: "/categories" },
+    ],
+    webSettings?.customerWebUrl,
+  );
+
+  return (
+    <>
+      <DynamicSEO
+        title={t("pageTitle.categories")}
+        description={t("pages.categories.subtitle")}
+        keywords="categories, product categories, shop by category, browse categories"
+        canonical="/categories"
+        ogType="website"
+        ogTitle={t("pageTitle.categories")}
+        ogDescription={t("pages.categories.subtitle")}
+        jsonLd={[collectionSchema, breadcrumbSchema]}
+      />
+
+      <div className="min-h-screen">
+        {/* Breadcrumb */}
+        <MyBreadcrumbs
+          breadcrumbs={[
+            { href: "/categories", label: t("pageTitle.categories") },
+          ]}
+        />
+
+        <button
+          id="refetch-categories-page"
+          className="hidden"
+          onClick={() => refetch()}
+        />
+
+        {/* Page Header */}
+        <PageHeader
+          title={t("pages.categories.title")}
+          subtitle={t("pages.categories.subtitle")}
+          highlightText={
+            total ? `${total} ${t("pages.categories.highlight")}` : ""
+          }
+        />
+
+        {/* Categories Grid */}
+        <InfiniteScroll
+          hasMore={hasMore}
+          isLoading={isLoadingMore}
+          onLoadMore={loadMore}
+        >
+          <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 sm:gap-3">
+            {isLoading && categories.length === 0
+              ? Array.from({ length: 10 }).map((_, index) => (
+                  <CategoryCardSkeleton key={index} />
+                ))
+              : categories.map((category) => (
+                  <CategoryCard category={category} key={category.id} />
+                ))}
+          </div>
+
+          {isLoadingMore && (
+            <div className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2 sm:gap-3 mt-6">
+              {Array.from({ length: 10 }).map((_, index) => (
+                <CategoryCardSkeleton key={`loading-${index}`} />
+              ))}
+            </div>
+          )}
+
+          {categories.length > 0 ? (
+            <InfiniteScrollStatus
+              entityType={t("pages.categories.infiniteScroll")}
+              total={total}
+              hasMore={hasMore}
+            />
+          ) : fetchError ? (
+            <ErrorState
+              title={t("something_went_wrong")}
+              description={t("content_load_error_message")}
+              retryLabel={t("try_again")}
+              onRetry={() => refetch()}
+            />
+          ) : (
+            <NoProductsFound
+              icon={FolderOpen}
+              title={t("pages.categories.noCategories.title")}
+              description={t("pages.categories.noCategories.description")}
+              customActions={
+                <div className="flex w-full justify-center items-center">
+                  <Button
+                    color="primary"
+                    className="h-8"
+                    variant="solid"
+                    onPress={() => {
+                      router.push("/");
+                    }}
+                    endContent={<ArrowRight size={16} />}
+                  >
+                    {t("home_title")}
+                  </Button>
+                </div>
+              }
+            />
+          )}
+        </InfiniteScroll>
+      </div>
+    </>
+  );
+};
+
+// SSR
+export const getServerSideProps: GetServerSideProps | undefined = isSSR()
+  ? async (context) => {
+      try {
+        const slug = context.query.slug as string | undefined;
+        const market = getMarketFromContext(context);
+
+        const categories = await getCategories({
+          page: 1,
+          per_page: PER_PAGE,
+          slug: slug,
+          market,
+        });
+        const settings = await getSettings({ market });
+        await loadTranslations(context);
+
+        return {
+          props: {
+            initialCategories: categories,
+            initialSettings: settings.data,
+          },
+        };
+      } catch (err) {
+        console.error("Error in getServerSideProps:", err);
+        return {
+          props: {
+            initialCategories: null,
+            initialSettings: null,
+            error:
+              err instanceof Error
+                ? err.message
+                : "An error occurred during SSR",
+          },
+        };
+      }
+    }
+  : undefined;
+
+export default CategoriesPage;
