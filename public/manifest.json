@@ -1,0 +1,18 @@
+{
+  "name": "Quick-store",
+  "short_name": "Quick-store",
+  "description": "Shop products from trusted stores with Quick-store.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#fbbf24",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/quick-store-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

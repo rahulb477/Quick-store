@@ -1,0 +1,43 @@
+# Dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# Next.js / build output
+/.next/
+/out/
+/dist/
+/build/
+/coverage/
+
+# Environment files: never commit credentials
+.env
+.env.*
+!.env.example
+
+# Deployment tooling
+.vercel/
+
+# Generated SEO feeds are created from the configured backend during builds
+/public/sitemap.xml
+/public/sitemaps/
+/public/feeds/
+
+# Generated TypeScript / PWA files
+*.tsbuildinfo
+next-env.d.ts
+/public/sw.js
+/public/workbox-*.js
+/public/worker-*.js
+/public/swe-worker-*.js
+/public/sw.js.map
+/public/workbox-*.js.map
+/public/worker-*.js.map
+/public/logo-144.png
+/public/logo-192.png
+/public/logo-512.png
+
+# Local/editor files
+.DS_Store
+*.pem
+.idea/

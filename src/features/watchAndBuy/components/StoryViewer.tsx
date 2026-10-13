@@ -1,0 +1,332 @@
+import { Icon } from "@iconify/react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { Button, Image, Skeleton } from "@/components/ui";
+import { useDocumentScrollLock } from "@/features/watchAndBuy/hooks/useDocumentScrollLock";
+import type { WatchBuyProfile, WatchBuyStatus } from "@/types/watchBuy";
+
+import ReelProductRail from "./ReelProductRail";
+import StoryProgressBars from "./StoryProgressBars";
+
+interface StoryViewerProps {
+  error: boolean;
+  isLoading: boolean;
+  onClose: () => void;
+  onComplete: () => void;
+  onRetry: () => void;
+  onSeen: (statusId: number) => void;
+  profile: WatchBuyProfile;
+  statuses: WatchBuyStatus[];
+}
+
+const StoryViewer = ({
+  error,
+  isLoading,
+  onClose,
+  onComplete,
+  onRetry,
+  onSeen,
+  profile,
+  statuses,
+}: StoryViewerProps) => {
+  const { t, i18n } = useTranslation();
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isMuted, setIsMuted] = useState(true);
+  const [pausedStatusId, setPausedStatusId] = useState<number | null>(null);
+  const [playbackVersion, setPlaybackVersion] = useState(0);
+  const [readyStatusId, setReadyStatusId] = useState<number | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const completedRef = useRef(false);
+  const advancingStatusIdRef = useRef<number | null>(null);
+  const resumeVideoRef = useRef(false);
+  const current = statuses[currentIndex];
+  const currentStatusId = current?.id;
+
+  useDocumentScrollLock();
+
+  const goNext = useCallback(() => {
+    if (!current || advancingStatusIdRef.current === current.id) return;
+    advancingStatusIdRef.current = current.id;
+    if (currentIndex >= statuses.length - 1) {
+      if (!completedRef.current) {
+        completedRef.current = true;
+        onComplete();
+      }
+      return;
+    }
+    setCurrentIndex((index) => index + 1);
+  }, [current, currentIndex, onComplete, statuses.length]);
+
+  const goPrevious = useCallback(() => {
+    if (currentIndex === 0) {
+      advancingStatusIdRef.current = null;
+      if (videoRef.current) videoRef.current.currentTime = 0;
+      setPlaybackVersion((version) => version + 1);
+      return;
+    }
+    setCurrentIndex((index) => Math.max(0, index - 1));
+  }, [currentIndex]);
+
+  useEffect(() => {
+    if (currentStatusId == null) return;
+    advancingStatusIdRef.current = null;
+    onSeen(currentStatusId);
+  }, [currentStatusId, onSeen]);
+
+  const pauseProgress = useCallback(() => {
+    if (!current) return;
+    setPausedStatusId(current.id);
+    const video = videoRef.current;
+    resumeVideoRef.current = Boolean(video && !video.paused);
+    video?.pause();
+  }, [current]);
+
+  const resumeProgress = useCallback(() => {
+    setPausedStatusId(null);
+    if (resumeVideoRef.current) {
+      void videoRef.current?.play().catch(() => undefined);
+    }
+    resumeVideoRef.current = false;
+  }, []);
+
+  const markCurrentReady = useCallback(() => {
+    if (currentStatusId != null) setReadyStatusId(currentStatusId);
+  }, [currentStatusId]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const focusableSelector =
+      'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusFrame = window.requestAnimationFrame(() => dialog?.focus());
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowRight") goNext();
+      if (event.key === "ArrowLeft") goPrevious();
+      if (event.key !== "Tab" || !dialog) return;
+
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>(focusableSelector),
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) {
+        event.preventDefault();
+        dialog.focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [goNext, goPrevious, onClose]);
+
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      tabIndex={-1}
+      aria-modal="true"
+      aria-label={t("watchBuy.stories.viewerLabel", {
+        username: profile.username,
+      })}
+      className="fixed inset-0 z-overlay grid place-items-center bg-shell"
+    >
+      <div className="relative h-dvh w-full overflow-hidden bg-shell md:aspect-reel md:h-dvh md:w-auto md:border-x md:border-shell-divider">
+        <div className="absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-shell to-transparent px-3 pb-8 pt-3">
+          {current ? (
+            <StoryProgressBars
+              key={`${current.id}-${playbackVersion}`}
+              currentIndex={currentIndex}
+              isPaused={pausedStatusId === current.id}
+              isReady={!current.media_url || readyStatusId === current.id}
+              onFinished={goNext}
+              status={current}
+              statuses={statuses}
+              videoRef={videoRef}
+            />
+          ) : null}
+          <div className="flex items-center gap-2 text-shell-foreground">
+            <Button
+              isIconOnly
+              size="sm"
+              variant="light"
+              onPress={onClose}
+              aria-label={t("watchBuy.back")}
+              className="shrink-0 text-shell-foreground"
+            >
+              <Icon
+                icon={
+                  i18n.dir() === "rtl"
+                    ? "solar:arrow-right-linear"
+                    : "solar:arrow-left-linear"
+                }
+                className="text-2xl"
+              />
+            </Button>
+            <Image
+              removeWrapper
+              disableAnimation
+              src={profile.photo_url ?? undefined}
+              alt=""
+              radius="full"
+              className="size-9 border border-shell-divider object-cover"
+              fallbackSrc="/quick-store-logo.svg"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-bold">{profile.username}</p>
+              {current ? (
+                <p className="text-xs font-medium text-shell-foreground/80">
+                  {new Date(current.created_at).toLocaleString(i18n.language)}
+                </p>
+              ) : null}
+            </div>
+            {current?.content_type === "video" ? (
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                onPress={() => setIsMuted((muted) => !muted)}
+                aria-label={
+                  isMuted
+                    ? t("watchBuy.media.unmute")
+                    : t("watchBuy.media.mute")
+                }
+                className="text-shell-foreground"
+              >
+                <Icon
+                  icon={
+                    isMuted
+                      ? "solar:volume-cross-linear"
+                      : "solar:volume-loud-linear"
+                  }
+                  className="text-xl"
+                />
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        {isLoading ? (
+          <Skeleton className="h-full w-full rounded-none" />
+        ) : error ? (
+          <div className="grid h-full place-items-center px-6 text-center text-shell-foreground">
+            <div>
+              <Icon
+                icon="solar:danger-triangle-linear"
+                className="mx-auto mb-3 text-4xl"
+              />
+              <p className="text-lg font-bold">
+                {t("watchBuy.stories.failed")}
+              </p>
+              <Button className="mt-4" onPress={onRetry}>
+                {t("common.retry")}
+              </Button>
+            </div>
+          </div>
+        ) : current ? (
+          <>
+            <div className="absolute inset-0 grid place-items-center">
+              {current.content_type === "video" && current.media_url ? (
+                <video
+                  ref={videoRef}
+                  key={current.id}
+                  src={current.media_url}
+                  autoPlay
+                  playsInline
+                  muted={isMuted}
+                  onEnded={goNext}
+                  onError={goNext}
+                  onLoadedMetadata={markCurrentReady}
+                  onPlaying={markCurrentReady}
+                  className="h-full w-full object-contain"
+                >
+                  <track
+                    default
+                    kind="captions"
+                    src="/captions/empty.vtt"
+                    srcLang="en"
+                    label={t("watchBuy.media.captions")}
+                  />
+                </video>
+              ) : current.media_url ? (
+                <Image
+                  removeWrapper
+                  disableAnimation
+                  src={current.media_url}
+                  alt={current.text ?? ""}
+                  radius="none"
+                  onError={markCurrentReady}
+                  onLoad={markCurrentReady}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <div className="grid h-full w-full place-items-center bg-content2 px-8 text-center text-2xl font-extrabold leading-tight text-foreground">
+                  {current.text}
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              aria-label={t("watchBuy.stories.previous")}
+              onClick={goPrevious}
+              onPointerCancel={resumeProgress}
+              onPointerDown={pauseProgress}
+              onPointerLeave={resumeProgress}
+              onPointerUp={resumeProgress}
+              className="absolute inset-y-20 start-0 z-10 w-1/3 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-focus"
+            />
+            <button
+              type="button"
+              aria-label={t("watchBuy.stories.next")}
+              onClick={goNext}
+              onPointerCancel={resumeProgress}
+              onPointerDown={pauseProgress}
+              onPointerLeave={resumeProgress}
+              onPointerUp={resumeProgress}
+              className="absolute inset-y-20 end-0 z-10 w-1/3 focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-focus"
+            />
+
+            <div
+              className={`pointer-events-none absolute inset-x-0 z-30 bg-gradient-to-t from-shell via-shell/80 to-transparent px-4 pt-16 text-shell-foreground ${
+                current.products.length > 0 ? "bottom-36 pb-3" : "bottom-0 pb-8"
+              }`}
+            >
+              {current.text && current.media_url ? (
+                <p className="line-clamp-3 text-sm font-medium leading-5">
+                  {current.text}
+                </p>
+              ) : null}
+            </div>
+
+            <ReelProductRail
+              products={current.products}
+              onInteractionEnd={resumeProgress}
+              onInteractionStart={pauseProgress}
+            />
+          </>
+        ) : (
+          <div className="grid h-full place-items-center px-6 text-center text-shell-foreground">
+            <p className="font-semibold">
+              {t("watchBuy.stories.emptyProfile")}
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default StoryViewer;

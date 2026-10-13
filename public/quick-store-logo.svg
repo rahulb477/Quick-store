@@ -1,0 +1,36 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 440 104"
+  role="img"
+  aria-labelledby="title"
+>
+  <title id="title">Quick-store</title>
+  <rect x="4" y="4" width="96" height="96" rx="24" fill="#fbbf24" />
+  <path d="M24 43h56l-5 43H29l-5-43Z" fill="#171717" />
+  <path
+    d="M36 46V34a16 16 0 0 1 32 0v12"
+    fill="none"
+    stroke="#171717"
+    stroke-linecap="round"
+    stroke-width="7"
+  />
+  <path
+    d="m38 63 9 9 19-19"
+    fill="none"
+    stroke="#fff"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    stroke-width="6"
+  />
+  <text
+    x="118"
+    y="69"
+    fill="#171717"
+    font-family="ui-sans-serif,system-ui,-apple-system,'Segoe UI',sans-serif"
+    font-size="44"
+    font-weight="700"
+    letter-spacing="-1.5"
+  >
+    Quick-store
+  </text>
+</svg>

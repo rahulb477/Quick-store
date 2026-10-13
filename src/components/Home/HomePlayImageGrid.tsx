@@ -1,0 +1,582 @@
+import { CSSProperties, FC, memo } from "react";
+import Link from "next/link";
+import Script from "next/script";
+import { Swiper, SwiperSlide } from "swiper/react";
+import { Navigation, Pagination, Autoplay } from "swiper/modules";
+import { Button } from "@/components/ui";
+import { Icon } from "@iconify/react";
+import HomeResponsiveImage from "@/components/Home/HomeResponsiveImage";
+
+import { HomeSection, HomeSectionItem } from "@/types/ApiResponse";
+import {
+  homeItemHref,
+  homeItemImage,
+  parseBoolSetting,
+  getSpacingValueSetting,
+  getContainerWidthClasses,
+  getHoverEffectClasses
+} from "@/helpers/homeLayout";
+
+interface HomePlayImageGridProps {
+  priority?: boolean;
+  section: HomeSection;
+}
+
+const getMobileColSpan = (span: number) => {
+  switch (span) {
+    case 1: return "col-span-1";
+    case 2: return "col-span-2";
+    case 3: return "col-span-3";
+    case 4: return "col-span-4";
+    case 5: return "col-span-5";
+    case 6: return "col-span-6";
+    case 7: return "col-span-7";
+    case 8: return "col-span-8";
+    case 9: return "col-span-9";
+    case 10: return "col-span-10";
+    case 11: return "col-span-11";
+    case 12:
+    default:
+      return "col-span-12";
+  }
+};
+
+const getDesktopColSpan = (span: number) => {
+  switch (span) {
+    case 1: return "sm:col-span-1";
+    case 2: return "sm:col-span-2";
+    case 3: return "sm:col-span-3";
+    case 4: return "sm:col-span-4";
+    case 5: return "sm:col-span-5";
+    case 6: return "sm:col-span-6";
+    case 7: return "sm:col-span-7";
+    case 8: return "sm:col-span-8";
+    case 9: return "sm:col-span-9";
+    case 10: return "sm:col-span-10";
+    case 11: return "sm:col-span-11";
+    case 12:
+    default:
+      return "sm:col-span-12";
+  }
+};
+
+const getLottieSize = (val: any, defaultVal: string): string => {
+  if (!val) return defaultVal;
+  if (!isNaN(Number(val))) return `${val}px`;
+  return String(val);
+};
+
+const getItemAspectRatio = (config: HomeSectionItem["config"]): string | undefined => {
+  const ratio = String(config?.aspect_ratio || "original");
+  if (ratio === "original") return undefined;
+  if (ratio === "custom") {
+    if (getItemCustomSize(config)) return undefined;
+    const width = Math.max(0.1, Number(config?.aspect_width) || 1);
+    const height = Math.max(0.1, Number(config?.aspect_height) || 1);
+    return `${width} / ${height}`;
+  }
+  return ratio.replace(":", " / ");
+};
+
+const getItemCustomSize = (config: HomeSectionItem["config"]): { width: string; height: string } | undefined => {
+  if (String(config?.aspect_ratio || "original") !== "custom") return undefined;
+  const units = ["px", "%", "rem", "em", "vw", "vh"];
+  const widthUnit = units.includes(String(config?.aspect_width_unit)) ? String(config?.aspect_width_unit) : undefined;
+  const heightUnit = units.includes(String(config?.aspect_height_unit)) ? String(config?.aspect_height_unit) : undefined;
+  if (!widthUnit && !heightUnit) return undefined;
+
+  const width = Math.max(0.1, Number(config?.aspect_width) || 100);
+  const height = Math.max(0.1, Number(config?.aspect_height) || 300);
+  return {
+    width: `${width}${widthUnit || "%"}`,
+    height: `${height}${heightUnit || "px"}`,
+  };
+};
+
+const getImageFrameStyle = (config: HomeSectionItem["config"]): CSSProperties => {
+  const customSize = getItemCustomSize(config);
+  if (customSize) {
+    return {
+      width: `min(${customSize.width}, 100%)`,
+      maxWidth: "100%",
+      height: customSize.height,
+      marginInline: "auto",
+    };
+  }
+
+  const aspectRatio = getItemAspectRatio(config);
+  return {
+    width: "100%",
+    aspectRatio: aspectRatio || "auto",
+  };
+};
+
+const getImageFit = (config: HomeSectionItem["config"]): CSSProperties["objectFit"] => {
+  const value = String(config?.object_fit || "cover");
+  return ["cover", "contain", "fill", "none", "scale-down"].includes(value)
+    ? value as CSSProperties["objectFit"]
+    : "cover";
+};
+
+const getImagePosition = (config: HomeSectionItem["config"]): CSSProperties["objectPosition"] => {
+  const value = String(config?.object_position || "center");
+  return ["center", "top", "right", "bottom", "left"].includes(value) ? value : "center";
+};
+
+const getSignedRowSpacing = (rowConfig: Record<string, unknown>) => {
+  const fallback = Number(rowConfig.outer_padding) || 0;
+  const custom = String(rowConfig.outer_padding_custom || "").split("/");
+  const values = [0, 1, 2, 3].map((index) => {
+    const rawValue = String(custom[index] ?? "").replace(/[^0-9.-]/g, "");
+    const parsed = rawValue === "" ? fallback : Number(rawValue);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  });
+  return {
+    padding: values.map((value) => `${Math.max(0, value)}px`).join(" "),
+    margin: values.map((value) => `${Math.min(0, value)}px`).join(" "),
+  };
+};
+
+interface SpanLayout {
+  item: HomeSectionItem;
+  span: number;
+}
+
+const calculateSpans = (items: HomeSectionItem[], isMobile: boolean): SpanLayout[] => {
+  const spanKey = isMobile ? "cols_mobile" : "cols";
+  const result: SpanLayout[] = [];
+
+  let currentGroup: HomeSectionItem[] = [];
+  let currentSum = 0;
+
+  const flushGroup = () => {
+    if (currentGroup.length === 0) return;
+
+    const autos = currentGroup.filter(it => !it.config?.[spanKey] || it.config[spanKey] === "auto");
+    const fixeds = currentGroup.filter(it => it.config?.[spanKey] && it.config[spanKey] !== "auto");
+
+    const fixedSum = fixeds.reduce((sum, it) => sum + Number(it.config?.[spanKey] || 0), 0);
+    const remaining = 12 - fixedSum;
+
+    if (autos.length > 0) {
+      const share = Math.max(1, Math.floor(remaining / autos.length));
+      let distributed = 0;
+
+      currentGroup.forEach((item, idx) => {
+        const isAuto = !item.config?.[spanKey] || item.config[spanKey] === "auto";
+        let finalSpan = isAuto ? share : Number(item.config?.[spanKey] || 12);
+
+        if (isAuto) {
+          distributed += share;
+          if (idx === currentGroup.map(g => !g.config?.[spanKey] || g.config[spanKey] === "auto").lastIndexOf(true)) {
+            const diff = remaining - distributed;
+            if (diff > 0) {
+              finalSpan += diff;
+            }
+          }
+        }
+        result.push({ item, span: finalSpan });
+      });
+    } else {
+      currentGroup.forEach(item => {
+        result.push({ item, span: Number(item.config?.[spanKey] || 12) });
+      });
+    }
+
+    currentGroup = [];
+    currentSum = 0;
+  };
+
+  items.forEach((item) => {
+    const rawVal = item.config?.[spanKey];
+    let itemSpan = 12;
+    if (rawVal && rawVal !== "auto") {
+      itemSpan = Number(rawVal);
+    }
+
+    if (rawVal === "auto" || !rawVal) {
+      currentGroup.push(item);
+    } else {
+      if (currentSum + itemSpan > 12) {
+        flushGroup();
+      }
+      currentGroup.push(item);
+      currentSum += itemSpan;
+    }
+  });
+
+  flushGroup();
+  return result;
+};
+
+const RowSwiperNavigation: FC<{ rIdx: number }> = ({ rIdx }) => {
+  return (
+    <>
+      <Button
+        isIconOnly
+        size="sm"
+        radius="lg"
+        aria-label="Previous"
+        className={`hb-prev-${rIdx} hidden sm:flex
+        absolute left-0 top-1/2 -translate-y-1/2 -translate-x-3 z-20
+        bg-background border border-default-300 shadow-lg disabled:opacity-50
+        transition-all duration-200 opacity-0 group-hover:opacity-100 hover:scale-110`}
+      >
+        <Icon
+          icon="solar:alt-arrow-left-linear"
+          className="text-xl text-default-700"
+        />
+      </Button>
+
+      <Button
+        isIconOnly
+        size="sm"
+        radius="lg"
+        aria-label="Next"
+        className={`hb-next-${rIdx} hidden sm:flex
+        absolute right-0 top-1/2 -translate-y-1/2 translate-x-3 z-20
+        bg-background border border-default-300 shadow-lg disabled:opacity-50
+        transition-all duration-200 opacity-0 group-hover:opacity-100 hover:scale-110`}
+      >
+        <Icon
+          icon="solar:alt-arrow-right-linear"
+          className="text-xl text-default-700"
+        />
+      </Button>
+    </>
+  );
+};
+
+interface StorefrontRow {
+  row_index: number;
+  style: string;
+  config: any;
+  items: HomeSectionItem[];
+}
+
+const HomePlayImageGrid: FC<HomePlayImageGridProps> = ({
+  priority = false,
+  section,
+}) => {
+  const rowsData = section.content?.rows;
+  const resolvedRows: StorefrontRow[] = [];
+
+  if (rowsData && rowsData.length > 0) {
+    rowsData.forEach((row: any) => {
+      resolvedRows.push({
+        row_index: row.row_index ?? 0,
+        style: row.style ?? "grid",
+        config: row.config ?? {},
+        items: row.items ?? [],
+      });
+    });
+  } else {
+    // Fallback/backwards compatibility for flat layout payload
+    const items = section.content?.items ?? [];
+    const groupedRows: HomeSectionItem[][] = [];
+    items.forEach((item) => {
+      const rIdx = item.config?.row_index !== undefined ? Number(item.config.row_index) : 0;
+      if (!groupedRows[rIdx]) {
+        groupedRows[rIdx] = [];
+      }
+      groupedRows[rIdx].push(item);
+    });
+
+    groupedRows.forEach((rowItems, rIdx) => {
+      if (rowItems && rowItems.length > 0) {
+        resolvedRows.push({
+          row_index: rIdx,
+          style: (section.style as string) || "grid",
+          config: section.config ?? {},
+          items: rowItems,
+        });
+      }
+    });
+  }
+
+  if (!resolvedRows.length) return null;
+
+  return (
+    <div className="w-full flex flex-col">
+      <Script
+        src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"
+        strategy="lazyOnload"
+      />
+      {resolvedRows.map((row, rIdx) => {
+        const rowConfig = row.config;
+        const isScroll = row.style === "scroll";
+
+        const signedGap = Number(rowConfig.grid_gap) || 0;
+        const gap = getSpacingValueSetting(Math.max(0, signedGap), "0px");
+        const rowSpacing = getSignedRowSpacing(rowConfig);
+        const rawRadius = getSpacingValueSetting(rowConfig.border_radius, "0px");
+        const borderRadius = rawRadius === "full" ? "9999px" : rawRadius;
+        const rowBackgroundStyle = rowConfig.background_type === "color"
+          ? { backgroundColor: rowConfig.background_color || "hsl(var(--heroui-content1))" }
+          : rowConfig.background_type === "image" && rowConfig.background_image
+            ? {
+                backgroundImage: `url(${rowConfig.background_image})`,
+                backgroundPosition: "center",
+                backgroundSize: "cover",
+              }
+            : {};
+
+        const hoverClasses = getHoverEffectClasses(rowConfig.hover_effect);
+        const { wrapperClass, innerClass } = getContainerWidthClasses(rowConfig.container_width);
+
+        if (isScroll) {
+          const itemsToShow = Number(rowConfig.items_to_show ?? 1);
+          const itemsToShowMobile = Number(rowConfig.items_to_show_mobile ?? 1);
+          const gapVal = signedGap;
+          const showBullets = parseBoolSetting(rowConfig.show_bullets, false);
+          const showScrollButtons = parseBoolSetting(rowConfig.show_scroll_buttons, true);
+          const autoScroll = parseBoolSetting(rowConfig.auto_scroll, false);
+          const autoScrollTime = Number(rowConfig.auto_scroll_time ?? 3);
+
+          return (
+            <div key={rIdx} className={wrapperClass} style={{ margin: rowSpacing.margin }}>
+              <div
+                className={`relative group ${innerClass}`}
+                style={{
+                  padding: rowSpacing.padding,
+                  ...rowBackgroundStyle,
+                }}
+              >
+                {showScrollButtons && (
+                  <RowSwiperNavigation rIdx={rIdx} />
+                )}
+
+                <Swiper
+                  modules={[Navigation, Pagination, Autoplay]}
+                  spaceBetween={gapVal}
+                  slidesPerView={itemsToShowMobile}
+                  breakpoints={{
+                    640: {
+                      slidesPerView: itemsToShow,
+                    },
+                  }}
+                  pagination={
+                    showBullets
+                      ? {
+                          clickable: true,
+                          bulletClass: "swiper-pagination-bullet !bg-default-500",
+                          bulletActiveClass: "swiper-pagination-bullet-active !bg-primary",
+                        }
+                      : false
+                  }
+                  navigation={
+                    showScrollButtons
+                      ? {
+                          prevEl: `.hb-prev-${rIdx}`,
+                          nextEl: `.hb-next-${rIdx}`,
+                        }
+                      : false
+                  }
+                  autoplay={
+                    autoScroll
+                      ? {
+                          delay: autoScrollTime * 1000,
+                          disableOnInteraction: false,
+                          pauseOnMouseEnter: true,
+                        }
+                      : false
+                  }
+                  className="w-full !pb-8"
+                >
+                  {row.items.map((item, index) => {
+                    const desktopSrc = homeItemImage(item);
+                    const mobileSrc = item.mobile_image || desktopSrc;
+                    const altText = item.config?.alt || item.title || "";
+                    const linkHref = homeItemHref(item as any);
+                    const hasLink = linkHref && linkHref !== "#";
+
+                    const cssAspectRatio = getItemAspectRatio(item.config);
+                    const customSize = getItemCustomSize(item.config);
+                    const isOriginal = !cssAspectRatio && !customSize;
+                    const isBanner =
+                      isOriginal &&
+                      itemsToShowMobile === 1 &&
+                      itemsToShow === 1;
+                    const imageFit = getImageFit(item.config);
+                    const imagePosition = getImagePosition(item.config);
+
+                    const isLottie = item.config?.media_type === "lottie";
+
+                    const slideContent = isLottie ? (
+                      <div
+                        className={`w-full overflow-hidden flex justify-center items-center ${hoverClasses}`}
+                        style={{
+                          borderRadius,
+                          width: getLottieSize(item.config?.lottie_width, "100%"),
+                          height: getLottieSize(item.config?.lottie_height, "150px"),
+                        }}
+                        dangerouslySetInnerHTML={{
+                          __html: `<lottie-player src="${desktopSrc}" background="transparent" speed="1" style="width: 100%; height: 100%; display: block; margin: 0 auto;" loop autoplay></lottie-player>`
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className={`w-full overflow-hidden block relative ${isOriginal ? "" : "h-full"} ${hoverClasses}`}
+                        style={{
+                          ...getImageFrameStyle(item.config),
+                          borderRadius,
+                        }}
+                      >
+                        <HomeResponsiveImage
+                          alt={altText}
+                          className="w-full"
+                          desktopSrc={desktopSrc}
+                          imageStyle={{
+                            borderRadius,
+                            height: isOriginal ? "auto" : "100%",
+                            objectFit: imageFit,
+                            objectPosition: imagePosition,
+                          }}
+                          loading={
+                            priority && rIdx === 0 && index === 0
+                              ? "eager"
+                              : "lazy"
+                          }
+                          mobileSrc={mobileSrc}
+                          reserveBannerSpace={isBanner}
+                        />
+                      </div>
+                    );
+
+                    return (
+                      <SwiperSlide key={item.id ?? index} className="h-auto">
+                        {hasLink ? (
+                          <Link
+                            href={linkHref}
+                            className="block w-full h-full"
+                            title={item.title ?? undefined}
+                          >
+                            {slideContent}
+                          </Link>
+                        ) : (
+                          <div className="w-full h-full">{slideContent}</div>
+                        )}
+                      </SwiperSlide>
+                    );
+                  })}
+                </Swiper>
+              </div>
+            </div>
+          );
+        }
+
+        // Render Grid mode
+        const desktopLayout = calculateSpans(row.items, false);
+        const mobileLayout = calculateSpans(row.items, true);
+
+        const itemStylesMap = row.items.map((item, idx) => {
+          const dSpan = desktopLayout.find((l) => l.item.id === item.id || (l.item.id === null && row.items.indexOf(l.item) === idx))?.span ?? 12;
+          const mSpan = mobileLayout.find((l) => l.item.id === item.id || (l.item.id === null && row.items.indexOf(l.item) === idx))?.span ?? 12;
+
+          const desktopColSpanClass = getDesktopColSpan(dSpan);
+          const mobileColSpanClass = getMobileColSpan(mSpan);
+          const isOriginal =
+            !getItemAspectRatio(item.config) && !getItemCustomSize(item.config);
+
+          return {
+            item,
+            className: `${mobileColSpanClass} ${desktopColSpanClass} overflow-hidden block relative w-full ${hoverClasses}`,
+            isMobileBanner:
+              mSpan === 12 && row.items.length === 1 && isOriginal,
+          };
+        });
+
+        return (
+          <div key={rIdx} className={wrapperClass} style={{ margin: rowSpacing.margin }}>
+            <div
+              className={`grid grid-cols-12 ${innerClass}`}
+              style={{
+                padding: rowSpacing.padding,
+                gap,
+                ...rowBackgroundStyle,
+              }}
+            >
+              {itemStylesMap.map(({ item, className, isMobileBanner }, index) => {
+                const desktopSrc = homeItemImage(item);
+                const mobileSrc = item.mobile_image || desktopSrc;
+                const altText = item.config?.alt || item.title || "";
+                const linkHref = homeItemHref(item as any);
+                const hasLink = linkHref && linkHref !== "#";
+
+                const customSize = getItemCustomSize(item.config);
+                const isOriginal = !getItemAspectRatio(item.config) && !customSize;
+                const isLottie = item.config?.media_type === "lottie";
+                const imageFit = getImageFit(item.config);
+                const imagePosition = getImagePosition(item.config);
+                const overlapStyle = signedGap < 0 ? { margin: `${signedGap / 2}px` } : undefined;
+
+                const cardContent = isLottie ? (
+                  <div
+                    className="w-full flex justify-center items-center"
+                    style={{
+                      borderRadius,
+                      width: getLottieSize(item.config?.lottie_width, "100%"),
+                      height: getLottieSize(item.config?.lottie_height, "150px"),
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: `<lottie-player src="${desktopSrc}" background="transparent" speed="1" style="width: 100%; height: 100%; display: block; margin: 0 auto;" loop autoplay></lottie-player>`
+                    }}
+                  />
+                ) : (
+                  <div
+                    className={`w-full relative ${isOriginal ? "" : "h-full"}`}
+                    style={{
+                      ...getImageFrameStyle(item.config),
+                      borderRadius,
+                    }}
+                  >
+                    <HomeResponsiveImage
+                      alt={altText}
+                      className="w-full"
+                      desktopSrc={desktopSrc}
+                      imageStyle={{
+                        borderRadius,
+                        height: isMobileBanner
+                          ? undefined
+                          : isOriginal
+                            ? "auto"
+                            : "100%",
+                        objectFit: isMobileBanner ? "contain" : imageFit,
+                        objectPosition: imagePosition,
+                      }}
+                      loading={
+                        priority && rIdx === 0 && index === 0
+                          ? "eager"
+                          : "lazy"
+                      }
+                      mobileSrc={mobileSrc}
+                      reserveBannerSpace={isMobileBanner}
+                    />
+                  </div>
+                );
+
+                return hasLink ? (
+                  <Link
+                    key={item.id ?? index}
+                    href={linkHref}
+                    className={className}
+                    style={overlapStyle}
+                    title={item.title ?? undefined}
+                  >
+                    {cardContent}
+                  </Link>
+                ) : (
+                  <div key={item.id ?? index} className={className} style={overlapStyle}>
+                    {cardContent}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+export default memo(HomePlayImageGrid);

@@ -1,0 +1,211 @@
+import type { NextConfig } from "next";
+import { readFileSync } from "fs";
+import { join } from "path";
+import withPWAInit from "@ducanh2912/next-pwa";
+
+const withPWA = withPWAInit({
+  dest: "public",
+  disable: process.env.NODE_ENV === "development",
+  register: true,
+  cacheOnFrontEndNav: true,
+  aggressiveFrontEndNavCaching: true,
+  reloadOnOnline: true,
+  // Authenticated screens must never reach the shared on-disk cache — the next
+  // person on this device would be served the previous account's pages.
+  extendDefaultRuntimeCaching: true,
+  workboxOptions: {
+    runtimeCaching: [
+      {
+        urlPattern: /^\/(my-account|cart|payment|shopping-list)(\/|$)/,
+        handler: "NetworkOnly" as const,
+      },
+    ],
+  },
+});
+
+// Read package.json to get version
+const packageJson = JSON.parse(
+  readFileSync(join(process.cwd(), "package.json"), "utf8"),
+);
+const { version = "0" } = packageJson;
+const isExport = process.env.NEXT_PUBLIC_SSR !== "true";
+
+// The optimizer fetches whatever host it is given, so the allowlist is the
+// bound. Panel host by default; add CDNs through NEXT_PUBLIC_IMAGE_HOSTS.
+const hostOf = (url?: string) => {
+  try {
+    return url ? new URL(url).hostname : "";
+  } catch {
+    return "";
+  }
+};
+
+const imageHosts = [
+  hostOf(process.env.NEXT_PUBLIC_ADMIN_PANEL_URL),
+  ...(process.env.NEXT_PUBLIC_IMAGE_HOSTS || "")
+    .split(",")
+    .map((host) => host.trim()),
+].filter(Boolean);
+
+const nextConfig: NextConfig = {
+  transpilePackages: ["@heroui/system", "@heroui/react"],
+  turbopack: {},
+  reactStrictMode: true,
+  output: isExport ? "export" : undefined,
+  trailingSlash: true,
+  images: {
+    unoptimized: isExport,
+    formats: ["image/avif", "image/webp"],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    minimumCacheTTL: 60,
+    dangerouslyAllowSVG: true,
+    contentDispositionType: "attachment",
+    remotePatterns: imageHosts.map((hostname) => ({
+      protocol: "https" as const,
+      hostname,
+    })),
+  },
+  experimental: {
+    scrollRestoration: true,
+    // HeroUI compound components share React context through the package barrel.
+    // Rewriting Card/CardBody into separate optimized entrypoints breaks that
+    // shared context during Pages Router SSR (refreshes then render the 500 page).
+    optimizePackageImports: ["lucide-react", "react-icons"],
+  },
+  allowedDevOrigins: ["localhost", "127.0.0.1", "*.localhost", "*.e2b.app"],
+  env: {
+    NEXT_PUBLIC_APP_VERSION: version,
+  },
+  compress: true,
+  poweredByHeader: false,
+  compiler: {
+    removeConsole:
+      process.env.NODE_ENV === "production"
+        ? {
+            exclude: ["error", "warn"],
+          }
+        : false,
+  },
+  ...(process.env.NODE_ENV === "development" || !isExport
+    ? {
+        rewrites: async () => [
+          {
+            source: "/cart/shared-lists/:token/",
+            destination: "/shared-cart/",
+          },
+        ],
+      }
+    : {}),
+  async headers() {
+    // Security headers for all routes
+    const securityHeaders = [
+      {
+        key: "X-DNS-Prefetch-Control",
+        value: "on",
+      },
+      {
+        key: "Strict-Transport-Security",
+        value: "max-age=63072000; includeSubDomains; preload",
+      },
+      {
+        key: "X-Frame-Options",
+        value: "SAMEORIGIN",
+      },
+      {
+        key: "X-Content-Type-Options",
+        value: "nosniff",
+      },
+      {
+        key: "X-XSS-Protection",
+        value: "1; mode=block",
+      },
+      {
+        key: "Referrer-Policy",
+        value: "strict-origin-when-cross-origin",
+      },
+      {
+        key: "Permissions-Policy",
+        value:
+          "camera=(), microphone=(), geolocation=(self), interest-cohort=()",
+      },
+      {
+        key: "Cross-Origin-Resource-Policy",
+        value: "cross-origin",
+      },
+      {
+        key: "Cross-Origin-Opener-Policy",
+        value: "same-origin-allow-popups",
+      },
+    ];
+
+    return [
+      // Apply security headers to all routes
+      {
+        source: "/:path*",
+        headers: securityHeaders,
+      },
+      {
+        source: "/sitemap.xml",
+        headers: [
+          {
+            key: "Content-Type",
+            value: "application/xml; charset=utf-8",
+          },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, s-maxage=3600",
+          },
+        ],
+      },
+      {
+        source: "/sitemaps/:path*.xml",
+        headers: [
+          { key: "Content-Type", value: "application/xml; charset=utf-8" },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, s-maxage=3600",
+          },
+        ],
+      },
+      {
+        source: "/feeds/:path*.xml",
+        headers: [
+          { key: "Content-Type", value: "application/xml; charset=utf-8" },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, s-maxage=3600",
+          },
+        ],
+      },
+      {
+        source: "/sitemap.xsl",
+        headers: [
+          {
+            key: "Content-Type",
+            value: "application/xslt+xml; charset=utf-8",
+          },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=86400, s-maxage=86400",
+          },
+        ],
+      },
+      {
+        source: "/robots.txt",
+        headers: [
+          {
+            key: "Content-Type",
+            value: "text/plain; charset=utf-8",
+          },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=3600, s-maxage=3600",
+          },
+        ],
+      },
+    ];
+  },
+};
+
+export default withPWA(nextConfig);

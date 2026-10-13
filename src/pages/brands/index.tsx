@@ -1,0 +1,211 @@
+import { GetServerSideProps } from "next";
+import { getBrands, getSettings } from "@/routes/api";
+import React from "react";
+import { isSSR } from "@/helpers/getters";
+import { getMarketFromContext } from "@/helpers/functionalHelpers";
+import MyBreadcrumbs from "@/components/custom/MyBreadcrumbs";
+import PageHeader from "@/components/custom/PageHeader";
+import { Brand, PaginatedResponse } from "@/types/ApiResponse";
+import BrandCard from "@/components/Cards/BrandCard";
+import BrandCardSkeleton from "@/components/Skeletons/BrandCardSkeleton";
+import InfiniteScroll from "@/components/Functional/InfiniteScroll";
+import { STALE_TIME, useInfiniteData } from "@/hooks/useInfiniteData";
+import { NextPageWithLayout } from "@/types";
+import InfiniteScrollStatus from "@/components/Functional/InfiniteScrollStatus";
+import NoProductsFound from "@/components/NoProductsFound";
+import { ArrowRight, Tag } from "lucide-react";
+import { Button, ErrorState } from "@/components/ui";
+import { loadTranslations } from "../../../i18n";
+import { useTranslation } from "react-i18next";
+import DynamicSEO from "@/SEO/DynamicSEO";
+import {
+  generateCollectionSchema,
+  generateBreadcrumbSchema,
+} from "@/helpers/seo";
+import { useRouter } from "next/router";
+import { useSettings } from "@/contexts/SettingsContext";
+
+interface BrandsPageProps {
+  initialBrands: PaginatedResponse<Brand[]> | null;
+  error?: string;
+}
+
+const PER_PAGE = 24;
+
+const BrandsPage: NextPageWithLayout<BrandsPageProps> = ({ initialBrands }) => {
+  const router = useRouter();
+  const { webSettings } = useSettings();
+  const {
+    data: brands,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    total,
+    loadMore,
+    refetch,
+    error: fetchError,
+  } = useInfiniteData<Brand>({
+    fetcher: getBrands,
+    perPage: PER_PAGE,
+    initialData: initialBrands?.data?.data || [],
+    initialTotal: initialBrands?.data?.total || 0,
+    dataKey: "brands-page",
+    staleTime: STALE_TIME.reference,
+    extraParams: {
+      scope_category_slug: router.query.slug as string,
+    },
+  });
+
+  const { t } = useTranslation();
+
+  // Generate SEO schemas
+  const collectionSchema = generateCollectionSchema(
+    t("pageTitle.brands"),
+    t("pages.brands.subtitle"),
+    "/brands",
+    webSettings?.customerWebUrl,
+  );
+
+  const breadcrumbSchema = generateBreadcrumbSchema(
+    [
+      { name: "Home", url: "/" },
+      { name: t("pageTitle.brands"), url: "/brands" },
+    ],
+    webSettings?.customerWebUrl,
+  );
+
+  return (
+    <>
+      {/* Enhanced SEO */}
+      <DynamicSEO
+        title={t("pageTitle.brands")}
+        description={t("pages.brands.subtitle")}
+        keywords="brands, top brands, popular brands, shop by brand"
+        canonical="/brands"
+        ogType="website"
+        ogTitle={t("pageTitle.brands")}
+        ogDescription={t("pages.brands.subtitle")}
+        jsonLd={[collectionSchema, breadcrumbSchema]}
+      />
+
+      {/* Breadcrumbs */}
+      <MyBreadcrumbs
+        breadcrumbs={[
+          { href: "/brands", label: t("pages.brands.breadcrumb.brands") },
+        ]}
+      />
+
+      {/* Page Header */}
+      <PageHeader
+        title={t("pages.brands.title")}
+        subtitle={t("pages.brands.subtitle")}
+        highlightText={
+          total ? `${t("pages.brands.highlight", { count: total })}` : ""
+        }
+      />
+      <button
+        id="refetch-brands-page"
+        className="hidden"
+        onClick={() => refetch()}
+      />
+
+      {/* Infinite Scroll */}
+      <InfiniteScroll
+        hasMore={hasMore}
+        isLoading={isLoadingMore}
+        onLoadMore={loadMore}
+      >
+        <div className="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-12 gap-2 sm:gap-6">
+          {isLoading && brands.length === 0
+            ? Array.from({ length: PER_PAGE }).map((_, i) => (
+                <BrandCardSkeleton key={i} />
+              ))
+            : brands.map((brand) => <BrandCard key={brand.id} brand={brand} />)}
+        </div>
+
+        {isLoadingMore && (
+          <div className="grid grid-cols-3 xs:grid-cols-4 sm:grid-cols-6 md:grid-cols-10 lg:grid-cols-12 gap-2 sm:gap-6 mt-6">
+            {Array.from({ length: PER_PAGE }).map((_, i) => (
+              <BrandCardSkeleton key={`loading-${i}`} />
+            ))}
+          </div>
+        )}
+
+        {brands.length > 0 ? (
+          <InfiniteScrollStatus
+            entityType={t("pages.brands.infiniteScroll")}
+            total={total}
+            hasMore={hasMore}
+          />
+        ) : fetchError ? (
+          <ErrorState
+            title={t("something_went_wrong")}
+            description={t("content_load_error_message")}
+            retryLabel={t("try_again")}
+            onRetry={() => refetch()}
+          />
+        ) : (
+          !isLoading && (
+            <NoProductsFound
+              icon={Tag}
+              title={t("pages.brands.noBrands.title")}
+              description={t("pages.brands.noBrands.description")}
+              customActions={
+                <div className="flex w-full justify-center items-center">
+                  <Button
+                    color="primary"
+                    className="h-8"
+                    variant="solid"
+                    onPress={() => router.push("/")}
+                    endContent={<ArrowRight size={16} />}
+                  >
+                    {t("home_title")}
+                  </Button>
+                </div>
+              }
+            />
+          )
+        )}
+      </InfiniteScroll>
+    </>
+  );
+};
+
+export const getServerSideProps: GetServerSideProps | undefined = isSSR()
+  ? async (context) => {
+      try {
+        const slug = context.query.slug as string | undefined;
+        const market = getMarketFromContext(context);
+
+        const brands = await getBrands({
+          page: 1,
+          per_page: PER_PAGE,
+          scope_category_slug: slug,
+          market,
+        });
+        const settings = await getSettings({ market });
+        await loadTranslations(context);
+
+        return {
+          props: {
+            initialBrands: brands,
+            initialSettings: settings.data,
+          },
+        };
+      } catch (err) {
+        console.error("Error in getServerSideProps:", err);
+        return {
+          props: {
+            initialBrands: null,
+            initialSettings: null,
+            error:
+              err instanceof Error
+                ? err.message
+                : "An error occurred during SSR",
+          },
+        };
+      }
+    }
+  : undefined;
+
+export default BrandsPage;
